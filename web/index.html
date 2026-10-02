@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>稳定匹配结果</title>
+<style>
+  :root {
+    --ink: #1f2933;
+    --muted: #6b7280;
+    --line: #cbd5e1;
+    --accent: #2563eb;
+    --ok: #15803d;
+    --bad: #b91c1c;
+    --panel: #f8fafc;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px;
+    font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+    color: var(--ink);
+    background: #fff;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 0 0 8px; }
+  .case-name { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+
+  #stats {
+    display: flex;
+    gap: 12px;
+    align-items: stretch;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+  }
+  .stat {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 10px 18px;
+    background: var(--panel);
+    min-width: 120px;
+  }
+  .stat .num { font-size: 26px; font-weight: 700; line-height: 1.2; }
+  .stat .label { font-size: 12px; color: var(--muted); }
+  #verdict {
+    border-radius: 8px;
+    padding: 10px 18px;
+    font-size: 16px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+  }
+  #verdict.ok { background: #dcfce7; color: var(--ok); border: 1px solid #86efac; }
+  #verdict.bad { background: #fee2e2; color: var(--bad); border: 1px solid #fca5a5; }
+
+  .columns { display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap; }
+  .panel {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px;
+    background: var(--panel);
+    flex: 1 1 320px;
+    min-width: 280px;
+  }
+  .pref-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .pref-table th, .pref-table td {
+    border-bottom: 1px solid #e2e8f0;
+    padding: 4px 6px;
+    text-align: left;
+    vertical-align: top;
+  }
+  .pref-table th { color: var(--muted); font-weight: 600; }
+  .chip {
+    display: inline-block;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    background: #fff;
+    padding: 0 6px;
+    margin: 1px 2px;
+    font-family: ui-monospace, monospace;
+    font-size: 12px;
+  }
+  .chip.tie { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .empty-row { color: var(--muted); font-style: italic; }
+
+  #graph-wrap {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+    overflow: auto;
+    max-height: 80vh;
+    margin-bottom: 20px;
+  }
+  canvas { display: block; }
+
+  .unmatched { display: flex; gap: 24px; flex-wrap: wrap; margin-bottom: 20px; }
+  .unmatched .panel { flex: 1 1 240px; }
+  .unmatched .ids { font-family: ui-monospace, monospace; font-size: 13px; line-height: 1.8; }
+  #error { color: var(--bad); font-weight: 600; }
+</style>
+</head>
+<body>
+  <h1>稳定匹配结果</h1>
+  <div class="case-name">用例：<span id="case-name">…</span>（本页全部数字与连线均来自引擎写出的 data.json，页面不做任何重算）</div>
+
+  <div id="stats">
+    <div class="stat"><div class="num" id="stat-matched">–</div><div class="label">配对数</div></div>
+    <div class="stat"><div class="num" id="stat-proposals">–</div><div class="label">提议次数</div></div>
+    <div class="stat"><div class="num" id="stat-blocking">–</div><div class="label">阻塞对数</div></div>
+    <div id="verdict">…</div>
+  </div>
+
+  <div id="error"></div>
+
+  <div id="graph-wrap"><canvas id="graph"></canvas></div>
+
+  <div class="unmatched">
+    <div class="panel"><h2>落空名单（甲侧）</h2><div class="ids" id="unmatched-a"></div></div>
+    <div class="panel"><h2>落空名单（乙侧）</h2><div class="ids" id="unmatched-b"></div></div>
+  </div>
+
+  <div class="columns">
+    <div class="panel"><h2>甲侧偏好表（名次相同＝并列，蓝色标出）</h2><div id="prefs-a"></div></div>
+    <div class="panel"><h2>乙侧偏好表（名次相同＝并列，蓝色标出）</h2><div id="prefs-b"></div></div>
+  </div>
+
+<script>
+"use strict";
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[c]));
+}
+
+function renderStats(data) {
+  document.getElementById("case-name").textContent = data.case;
+  document.getElementById("stat-matched").textContent = data.stats.matched;
+  document.getElementById("stat-proposals").textContent = data.stats.proposals;
+  document.getElementById("stat-blocking").textContent = data.stats.blocking;
+  const verdict = document.getElementById("verdict");
+  if (data.stats.blocking === 0) {
+    verdict.textContent = "✓ 稳定：0 个阻塞对（不存在互相都更想配对却被拆开的组合）";
+    verdict.className = "ok";
+  } else {
+    verdict.textContent = "✗ 不稳定：存在 " + data.stats.blocking + " 个阻塞对";
+    verdict.className = "bad";
+  }
+}
+
+function renderUnmatched(data) {
+  for (const [elId, list] of [["unmatched-a", data.unmatched_a], ["unmatched-b", data.unmatched_b]]) {
+    document.getElementById(elId).innerHTML =
+      list.length ? list.map(esc).join("<br>") : '<span class="empty-row">（无）</span>';
+  }
+}
+
+function renderPrefs(data) {
+  for (const [elId, prefs] of [["prefs-a", data.prefs_a], ["prefs-b", data.prefs_b]]) {
+    const rows = [];
+    for (const owner of Object.keys(prefs)) {
+      const entries = prefs[owner];
+      let cells;
+      if (!entries.length) {
+        cells = '<span class="empty-row">（对谁都不可接受）</span>';
+      } else {
+        const byRank = new Map();
+        for (const e of entries) {
+          if (!byRank.has(e.rank)) byRank.set(e.rank, []);
+          byRank.get(e.rank).push(e.id);
+        }
+        cells = [...byRank.entries()].map(([rank, ids]) => {
+          const tie = ids.length > 1;
+          const chips = ids.map(id =>
+            '<span class="chip' + (tie ? " tie" : "") + '">' + esc(id) + "</span>").join("");
+          return "<div>第 " + rank + " 名" + (tie ? "（并列）" : "") + "：" + chips + "</div>";
+        }).join("");
+      }
+      rows.push("<tr><td><b>" + esc(owner) + "</b></td><td>" + cells + "</td></tr>");
+    }
+    document.getElementById(elId).innerHTML =
+      '<table class="pref-table"><tr><th>标识</th><th>偏好（名次升序）</th></tr>' +
+      rows.join("") + "</table>";
+  }
+}
+
+function renderGraph(data) {
+  const canvas = document.getElementById("graph");
+  const ctx = canvas.getContext("2d");
+
+  const matchedA = data.pairs.map(p => p.a);
+  const matchedB = data.pairs.map(p => p.b);
+  const leftIds = matchedA.concat(data.unmatched_a);
+  const rightIds = matchedB.concat(data.unmatched_b);
+  const pairOfA = new Map(data.pairs.map(p => [p.a, p.b]));
+
+  const rowH = 26, nodeW = 130, nodeH = 18, gutter = 220, padX = 20, padTop = 44;
+  const unmatchedBand = 30;
+  const rows = Math.max(leftIds.length, rightIds.length);
+  const hasUnmatched = data.unmatched_a.length > 0 || data.unmatched_b.length > 0;
+  const height = padTop + rows * rowH + (hasUnmatched ? unmatchedBand : 0) + 16;
+  const width = padX * 2 + nodeW * 2 + gutter;
+
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = width * dpr;
+  canvas.height = height * dpr;
+  canvas.style.width = width + "px";
+  canvas.style.height = height + "px";
+  ctx.scale(dpr, dpr);
+
+  const yOf = new Map();
+  leftIds.forEach((id, i) => yOf.set("A" + id, padTop + i * rowH + nodeH / 2));
+  rightIds.forEach((id, i) => yOf.set("B" + id, padTop + i * rowH + nodeH / 2));
+  const xLeft = padX, xRight = padX + nodeW + gutter;
+
+  // 连线（先画线，节点盖在上面）
+  ctx.strokeStyle = "#2563eb";
+  ctx.lineWidth = 1.4;
+  for (const p of data.pairs) {
+    const y1 = yOf.get("A" + p.a), y2 = yOf.get("B" + p.b);
+    ctx.beginPath();
+    ctx.moveTo(xLeft + nodeW, y1);
+    ctx.bezierCurveTo(xLeft + nodeW + gutter / 2, y1, xRight - gutter / 2, y2, xRight, y2);
+    ctx.stroke();
+  }
+
+  // 落空区分隔线
+  if (hasUnmatched) {
+    const y = padTop + data.pairs.length * rowH + 8;
+    ctx.strokeStyle = "#cbd5e1";
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(padX, y);
+    ctx.lineTo(width - padX, y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = "#6b7280";
+    ctx.font = "12px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("以 下 为 落 空 名 单", width / 2, y + 16);
+  }
+
+  // 列标题
+  ctx.fillStyle = "#1f2933";
+  ctx.font = "bold 14px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("甲侧（主动提议方）", xLeft + nodeW / 2, 24);
+  ctx.fillText("乙侧（接受 / 拒绝）", xRight + nodeW / 2, 24);
+
+  // 节点
+  function drawNode(id, x, y, matched) {
+    ctx.fillStyle = matched ? "#eff6ff" : "#f1f5f9";
+    ctx.strokeStyle = matched ? "#2563eb" : "#94a3b8";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(x, y - nodeH / 2, nodeW, nodeH, 5);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = matched ? "#1f2933" : "#6b7280";
+    ctx.font = "12px ui-monospace, monospace";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(id, x + nodeW / 2, y + 1);
+    ctx.textBaseline = "alphabetic";
+  }
+  for (const id of leftIds) drawNode(id, xLeft, yOf.get("A" + id), pairOfA.has(id));
+  const matchedBSet = new Set(matchedB);
+  for (const id of rightIds) drawNode(id, xRight, yOf.get("B" + id), matchedBSet.has(id));
+}
+
+fetch("data.json", { cache: "no-store" })
+  .then(resp => {
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    return resp.json();
+  })
+  .then(data => {
+    renderStats(data);
+    renderUnmatched(data);
+    renderPrefs(data);
+    renderGraph(data);
+  })
+  .catch(err => {
+    document.getElementById("error").textContent =
+      "读不到 data.json（" + err.message + "）。请先在仓库根目录运行 " +
+      "「python3 main.py --web <用例文件>」生成数据，再用「cd web && python3 -m http.server 8000」起服务访问。";
+  });
+</script>
+</body>
+</html>
