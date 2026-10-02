@@ -1,0 +1,9 @@
+{
+  "case": "04-ties.txt",
+  "prefs_a": {"a1":[{"id":"b2","rank":1},{"id":"b4","rank":1},{"id":"b1","rank":2},{"id":"b3","rank":2}],"a2":[{"id":"b2","rank":1},{"id":"b4","rank":1},{"id":"b3","rank":2},{"id":"b1","rank":3}],"a3":[{"id":"b2","rank":1},{"id":"b4","rank":1},{"id":"b1","rank":2},{"id":"b3","rank":2}],"a4":[{"id":"b1","rank":1},{"id":"b2","rank":1},{"id":"b4","rank":1},{"id":"b3","rank":2}]},
+  "prefs_b": {"b1":[{"id":"a3","rank":1},{"id":"a4","rank":1},{"id":"a1","rank":2},{"id":"a2","rank":2}],"b2":[{"id":"a2","rank":1},{"id":"a3","rank":1},{"id":"a1","rank":2},{"id":"a4","rank":2}],"b3":[{"id":"a1","rank":1},{"id":"a3","rank":1},{"id":"a4","rank":1},{"id":"a2","rank":2}],"b4":[{"id":"a1","rank":1},{"id":"a2","rank":2},{"id":"a3","rank":2},{"id":"a4","rank":2}]},
+  "pairs": [{"a":"a1","b":"b4"},{"a":"a2","b":"b2"},{"a":"a3","b":"b1"},{"a":"a4","b":"b3"}],
+  "unmatched_a": [],
+  "unmatched_b": [],
+  "stats": {"matched": 4, "proposals": 10, "blocking": 0}
+}

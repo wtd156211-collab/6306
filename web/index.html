@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>稳定匹配结果</title>
+<style>
+  :root {
+    --bg: #f5f6f8;
+    --panel: #ffffff;
+    --ink: #1f2430;
+    --muted: #6b7280;
+    --a: #2563eb;
+    --b: #db2777;
+    --line: #6366f1;
+    --ok-bg: #dcfce7;
+    --ok-ink: #166534;
+    --bad-bg: #fee2e2;
+    --bad-ink: #991b1b;
+    --tie: #b45309;
+    --tie-bg: #fef3c7;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink);
+    font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; }
+
+  header { padding: 14px 20px; background: var(--panel); border-bottom: 1px solid #e5e7eb; }
+  header h1 { margin: 0 0 6px; font-size: 18px; }
+  #case-name { color: var(--muted); font-size: 13px; }
+  .stats { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+  .stat { background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 8px;
+    padding: 6px 12px; font-size: 13px; }
+  .stat b { font-size: 16px; margin-left: 4px; }
+  #verdict { margin-top: 10px; display: inline-block; padding: 7px 14px;
+    border-radius: 8px; font-size: 14px; font-weight: 600; }
+  #verdict.ok { background: var(--ok-bg); color: var(--ok-ink); }
+  #verdict.bad { background: var(--bad-bg); color: var(--bad-ink); }
+  #verdict.loading { background: #e5e7eb; color: var(--muted); }
+  #error { margin-top: 10px; padding: 10px 14px; background: var(--bad-bg);
+    color: var(--bad-ink); border-radius: 8px; font-size: 13px; display: none; }
+
+  #board { position: relative; overflow: auto; padding: 20px; }
+  .stage { position: relative; }
+  #lines { position: absolute; top: 0; left: 0; pointer-events: none;
+    z-index: 1; }
+  .cols { position: relative; z-index: 2; display: flex;
+    justify-content: space-between; gap: 240px; align-items: flex-start; }
+  .col { flex: 1; min-width: 300px; max-width: 480px; }
+  .col-a { border-top: 3px solid var(--a); }
+  .col-b { border-top: 3px solid var(--b); }
+  .col > h2 { font-size: 15px; margin: 0 0 10px; padding: 8px 2px; }
+
+  .card { background: var(--panel); border: 1px solid #e5e7eb; border-radius: 8px;
+    padding: 8px 10px; margin-bottom: 8px; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+  .card.matched { border-left: 4px solid var(--line); }
+  .card.unmatched { opacity: .62; border-left: 4px solid #9ca3af; }
+  .card .name { font-weight: 600; font-size: 14px; display: flex;
+    justify-content: space-between; gap: 8px; }
+  .card .name .partner { color: var(--line); font-weight: 500; font-size: 13px; }
+  .card .name .alone { color: var(--muted); font-weight: 500; font-size: 13px; }
+
+  .prefs { list-style: none; margin: 6px 0 0; padding: 0; }
+  .group { display: flex; align-items: baseline; gap: 6px; padding: 2px 0;
+    font-size: 12.5px; border-radius: 5px; }
+  .group .rank { display: inline-block; min-width: 2.4em; color: var(--muted);
+    font-variant-numeric: tabular-nums; }
+  .group .who { flex: 1; }
+  .chip { display: inline-block; background: #eef2ff; border-radius: 4px;
+    padding: 0 5px; margin: 1px 2px; }
+  .group.tie { background: var(--tie-bg); }
+  .group.tie .rank { color: var(--tie); font-weight: 700; }
+  .group.tie .chip { background: #fde68a; }
+  .tielabel { color: var(--tie); font-size: 11px; font-weight: 700;
+    white-space: nowrap; }
+  .empty-note { color: var(--muted); font-size: 12.5px; padding: 4px 2px; }
+
+  .unmatched-head { margin: 16px 0 8px; font-size: 13px; color: var(--muted);
+    border-top: 1px dashed #d1d5db; padding-top: 8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>稳定匹配结果</h1>
+  <div id="case-name">读取 data.json 中…</div>
+  <div id="verdict" class="loading">稳定性检查：等待引擎结果</div>
+  <div id="error"></div>
+  <div class="stats">
+    <span class="stat">配对数<b id="stat-matched">–</b></span>
+    <span class="stat">提议次数<b id="stat-proposals">–</b></span>
+    <span class="stat">阻塞对数<b id="stat-blocking">–</b></span>
+  </div>
+</header>
+<div id="board">
+  <div class="stage">
+  <canvas id="lines"></canvas>
+  <div class="cols">
+    <div class="col col-a">
+      <h2>甲侧（主动方）</h2>
+      <div id="matched-a"></div>
+      <div class="unmatched-head">落空（甲侧）</div>
+      <div id="unmatched-a"></div>
+    </div>
+    <div class="col col-b">
+      <h2>乙侧</h2>
+      <div id="matched-b"></div>
+      <div class="unmatched-head">落空（乙侧）</div>
+      <div id="unmatched-b"></div>
+    </div>
+  </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+// 所有数字、配对、结论都只来自 data.json，页面不做任何重算。
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, function (c) {
+    return {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c];
+  });
+}
+
+function renderPrefs(prefs) {
+  // prefs 已按 (名次, 标识) 升序，同名次即并列，原样分组展示。
+  var groups = [];
+  var byRank = new Map();
+  prefs.forEach(function (p) {
+    if (!byRank.has(p.rank)) byRank.set(p.rank, []);
+    byRank.get(p.rank).push(p.id);
+  });
+  byRank.forEach(function (ids, rank) {
+    var tie = ids.length > 1;
+    groups.push(
+      '<li class="group' + (tie ? " tie" : "") + '">' +
+        '<span class="rank">第 ' + rank + ' 志愿</span>' +
+        '<span class="who">' + ids.map(function (id) {
+          return '<span class="chip">' + escapeHtml(id) + "</span>";
+        }).join("") + "</span>" +
+        (tie ? '<span class="tielabel">并列 ' + ids.length + " 人</span>" : "") +
+      "</li>"
+    );
+  });
+  if (!groups.length) return '<div class="empty-note">对谁都不可接受</div>';
+  return '<ul class="prefs">' + groups.join("") + "</ul>";
+}
+
+function cardHtml(id, prefs, matched, partner) {
+  var tag = matched
+    ? '<span class="partner">↔ ' + escapeHtml(partner) + "</span>"
+    : '<span class="alone">落空</span>';
+  return (
+    '<div class="card ' + (matched ? "matched" : "unmatched") + '" data-id="' +
+      escapeHtml(id) + '">' +
+      '<div class="name"><span>' + escapeHtml(id) + "</span>" + tag + "</div>" +
+      renderPrefs(prefs) +
+    "</div>"
+  );
+}
+
+function render(data) {
+  window.__lastData = data;
+  document.getElementById("case-name").textContent = "用例：" + data.case;
+
+  var pairOfA = new Map();
+  var pairOfB = new Map();
+  data.pairs.forEach(function (p) {
+    pairOfA.set(p.a, p.b);
+    pairOfB.set(p.b, p.a);
+  });
+
+  // 左列（甲）：按甲标识升序；右列（乙）：按配对中甲的升序跟随，
+  // 连线因此不交叉；落空者一律排在下方。
+  var aMatched = data.pairs.map(function (p) { return p.a; });
+  var bInPairOrder = data.pairs.map(function (p) { return p.b; });
+  var aMatchedSet = new Set(aMatched);
+  var bMatchedSet = new Set(bInPairOrder);
+
+  document.getElementById("matched-a").innerHTML = aMatched
+    .map(function (a) {
+      return cardHtml(a, data.prefs_a[a] || [], true, pairOfA.get(a));
+    }).join("");
+  document.getElementById("matched-b").innerHTML = bInPairOrder
+    .map(function (b) {
+      return cardHtml(b, data.prefs_b[b] || [], true, pairOfB.get(b));
+    }).join("");
+  document.getElementById("unmatched-a").innerHTML = data.unmatched_a
+    .map(function (a) { return cardHtml(a, data.prefs_a[a] || [], false); })
+    .join("") || '<div class="empty-note">无</div>';
+  document.getElementById("unmatched-b").innerHTML = data.unmatched_b
+    .map(function (b) { return cardHtml(b, data.prefs_b[b] || [], false); })
+    .join("") || '<div class="empty-note">无</div>';
+
+  document.getElementById("stat-matched").textContent = data.stats.matched;
+  document.getElementById("stat-proposals").textContent = data.stats.proposals;
+  document.getElementById("stat-blocking").textContent = data.stats.blocking;
+
+  var verdict = document.getElementById("verdict");
+  if (data.stats.blocking === 0) {
+    verdict.className = "ok";
+    verdict.textContent = "稳定性检查：通过（0 个阻塞对，逐对核验自引擎输出）";
+  } else {
+    verdict.className = "bad";
+    verdict.textContent =
+      "稳定性检查：未通过，发现 " + data.stats.blocking + " 个阻塞对";
+  }
+
+  requestAnimationFrame(function () { drawLines(data); });
+}
+
+function drawLines(data) {
+  var canvas = document.getElementById("lines");
+  var board = document.getElementById("board");
+  var stage = board.querySelector(".stage");
+  var cols = board.querySelector(".cols");
+  // canvas 覆盖整张可滚动画布，坐标用容器内绝对坐标。
+  var w = Math.max(cols.scrollWidth, board.clientWidth - 40);
+  var h = Math.max(cols.scrollHeight, board.clientHeight - 40);
+  stage.style.minWidth = w + "px";
+  stage.style.minHeight = h + "px";
+  var dpr = window.devicePixelRatio || 1;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  canvas.style.width = w + "px";
+  canvas.style.height = h + "px";
+  var ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+
+  var cards = board.querySelectorAll(".card");
+  var byId = new Map();
+  cards.forEach(function (el) { byId.set(el.getAttribute("data-id"), el); });
+
+  var colRectA = document.querySelector(".col-a").getBoundingClientRect();
+  var colRectB = document.querySelector(".col-b").getBoundingClientRect();
+  var stageRect = stage.getBoundingClientRect();
+
+  var n = data.pairs.length;
+  data.pairs.forEach(function (p, i) {
+    var ca = byId.get(p.a);
+    var cb = byId.get(p.b);
+    if (!ca || !cb) return;
+    var ra = ca.getBoundingClientRect();
+    var rb = cb.getBoundingClientRect();
+    var x1 = colRectA.right - stageRect.left;
+    var x2 = colRectB.left - stageRect.left;
+    var y1 = ra.top + ra.height / 2 - stageRect.top;
+    var y2 = rb.top + rb.height / 2 - stageRect.top;
+
+    var hue = Math.round((i / Math.max(n, 1)) * 300);
+    ctx.strokeStyle = "hsla(" + hue + ", 62%, 42%, 0.55)";
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.bezierCurveTo((x1 + x2) / 2, y1, (x1 + x2) / 2, y2, x2, y2);
+    ctx.stroke();
+
+    ctx.fillStyle = "hsla(" + hue + ", 62%, 42%, 0.85)";
+    ctx.beginPath(); ctx.arc(x1, y1, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(x2, y2, 3, 0, Math.PI * 2); ctx.fill();
+  });
+}
+
+fetch("data.json")
+  .then(function (r) {
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    return r.json();
+  })
+  .then(render)
+  .catch(function (err) {
+    var box = document.getElementById("error");
+    box.style.display = "block";
+    box.textContent =
+      "读取 web/data.json 失败（" + err.message +
+      "）。请用 cd web && python3 -m http.server 8000 起服务，" +
+      "再访问 http://localhost:8000/；file:// 下 fetch 会被浏览器拦截。";
+  });
+
+window.addEventListener("resize", function () {
+  if (window.__lastData) requestAnimationFrame(function () {
+    drawLines(window.__lastData);
+  });
+});
+</script>
+</body>
+</html>
